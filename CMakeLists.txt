@@ -51,6 +51,8 @@ add_message_files(
 	FILES
    imu.msg
    gps.msg
+   motor_cmd.msg
+   eboard_cmd.msg
 )
 
 ## Generate services in the 'srv' folder

@@ -1,0 +1,1 @@
+{"geometry": {"type": "Point", "coordinates": {{ COORDS }} }, "type": "Feature", "properties": { "heading": {{ HEADING }} }}

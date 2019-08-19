@@ -8,16 +8,20 @@ import rospy
 
 from functools import partial
 from std_msgs.msg import String
-from boat_server.msg import imu as imu_msg, gps as gps_msg
+from boat_server.msg import imu as imu_msg, 
+									 gps as gps_msg, 
+									 motor_cmd as motor_cmd_msg, 
+									 eboard_cmd as eboard_cmd_msg
 
-supported_sensors = ['imu', 'gps', 'battery']
+supported_sensors = ['imu', 'gps']
 
 async def main(callback_func):
 	outgoing_msgs = asyncio.Queue()
 	incoming_msgs = asyncio.Queue()
 	
 	rospy.init_node('serial_comms', anonymous=True)
-	rospy.Subscriber('serial_out', String, partial(subscriber_callback, outgoing_msgs))
+	rospy.Subscriber('motor_cmd', motor_cmd_msg, partial(motor_cmd_callback, outgoing_msgs))
+	rospy.Subscriber('eboard_cmd', eboard_cmd_msg, partial(eboard_cmd_callback, outgoing_msgs))
 
 	reader, writer = await serial_asyncio.open_serial_connection(url='/dev/ttyACM0', baudrate=115200)
 	await asyncio.sleep(3)
@@ -52,7 +56,7 @@ async def publisher(msgs):
 		try:
 			parsed_msg = json.loads(msg)
 		except:
-			rospy.loginfo('an error ocurred while parsing json message')
+			rospy.loginfo(f"An error ocurred while parsing json message: {msg}")
 			parsed_msg['type'] = 'error'
 
 		if parsed_msg['type'] == 'imu':
@@ -88,9 +92,17 @@ async def publisher(msgs):
 
 		msgs.task_done()
 
-def subscriber_callback(msgs, msg):
-	msgs.put_nowait(msg.data)
-	rospy.loginfo(f"forwarding {msg.data} to serial")
+def motor_cmd_callback(msg_queue, msg):
+	# Convert message to string
+	msg_string = f"\{\"m0\":\{\"v":{msg.m0}\},\"m1\":\{\"v":{msg.m1}\}\}\r\n"
+	# Push coverted message string to output queue
+	msg_queue.put_nowait(msg_string)
+	rospy.loginfo(f"Pushing formatted motor message to output queue: {msg_string}")
+
+def eboard_cmd_callback(msg_queue, msg):
+	msg_string = f"\{\"e\":\{\"cmd\":\"{msg.cmd}\"\}\}\r\n"
+	msg_queue.put_nowait(msg_string)
+	rospy.loginfo(f"Pushing formatted eboard message to output queue: {msg_string}")	
 
 def sigint_handler(signum, frame):
 	for task in asyncio.Task.all_tasks():

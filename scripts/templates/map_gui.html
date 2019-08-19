@@ -1,0 +1,169 @@
+<html>
+	<head>
+		<meta charset='utf-8' />
+		<title></title>
+		<meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+		<script src='https://api.tiles.mapbox.com/mapbox-gl-js/v1.1.1/mapbox-gl.js'></script>
+		<link href='https://api.tiles.mapbox.com/mapbox-gl-js/v1.1.1/mapbox-gl.css' rel='stylesheet' />
+		<style>
+			body { margin:0; padding:0; }
+			#map { position:absolute; top:0; bottom:50; width:100%; }
+			#menu { position:absolute; bottom:0; height:50; width:100%; }
+		</style>
+	</head>
+	<body>
+		<div id='map'></div>
+		<nav id='menu'>
+			{% for label, command in COMMANDS.items() %}
+				<button class="command command-{{ command }}" value="{{ command }}">
+					{{ label }}
+				</button>
+			{% endfor %}
+		</nav>
+		<div class='overlay'></div>
+		<script>
+			mapboxgl.accessToken = '{{ ACCESS_KEY }}';
+
+			var map = new mapboxgl.Map({
+				container: 'map',
+				style: 'mapbox://styles/mapbox/satellite-v9',
+				center: [-71.2230221, 42.4858533],
+				zoom: 15
+			});
+
+			map.dragRotate.disable();
+			map.touchZoomRotate.disable();
+
+			var popup = new mapboxgl.Popup({
+				closeButton: false
+			});
+
+			var url = 'http://127.0.0.1:5000/curr_loc';
+			map.on('load', function () {
+				window.setInterval(function() {
+					map.getSource('boat').setData(url);
+				}, 500);
+			 	
+				// var stop_locations = {{ stop_locations|safe }}
+				// stop_locations.forEach(function(marker, index) {
+				// 	var el = document.createElement('div');
+				// 	el.className = 'marker';
+				// 	el.style.left = '-15px';
+				// 	el.style.top = '-32px';
+				// 	el.addEventListener('mousemove', function(e) {
+				// 		var coordinates = map.unproject([e.x, e.y]);
+				// 		popup.setLngLat(coordinates)
+				// 			.setText(marker.properties.title)
+				// 			.addTo(map); 
+				// 	});
+				// 	el.addEventListener('mouseout', function(e) {
+				// 	   popup.remove(); 
+				// 	});
+				// 	new mapboxgl.Marker(el)
+				// 		.setLngLat(marker.geometry.coordinates)
+				// 		.addTo(map);
+				// 	// Create location buttons
+				// 	var button = document.createElement('button');
+				// 	button.className = 'location_btn';
+				// 	button.value = marker.properties.location_index;
+				// 	button.innerHTML = "Day " + (index + 1) + " - " + marker.properties.title;
+				// 	$(".overlay").append(button)
+				// 	});
+				// 	// Control the location of the car icon
+				// 	$(".location_btn").click(function() {
+				// 	// Get the location index from the button value
+				// 	var location_index = Number($(this).val());
+				// 	// Set the location of the car point on the route coordinate
+				// 	point.features[0].geometry.coordinates = route.geometry.coordinates[location_index];
+				// 	map.getSource('point').setData(point);
+				// 	// Start the animation from that index
+				// 	counter = location_index;
+				// 	animate(counter);
+				// });
+
+				map.addSource('boat', { type: 'geojson', data: url });
+				// map.addSource('boat', {
+				// 	"type": "geojson",
+				// 	"data": {
+				// 		"type": "Feature",
+				// 		"geometry": {
+				// 			"type": "Point",
+				// 			"coordinates": [-71.22302332165758,42.4858228839322],
+				// 		},
+				// 		"properties": {
+				// 			"heading":Number(90),
+				// 		},
+				// 	}
+				// });
+				map.addLayer({
+					"id": "boat",
+					"type": "symbol",
+					"source": "boat",
+					"layout": {
+						"icon-image": "mountain-15",
+						"icon-size": 3,
+						"icon-padding": 1,
+						"icon-allow-overlap":true,
+						"icon-anchor": "center",
+						//"icon-pitch-alignment":"map",
+						"icon-rotation-alignment":"map",
+						//"icon-rotate": ["get", "heading"],
+						"icon-rotate": {
+							"type": "identity",
+							"property": "heading"
+						}
+					},
+				});
+			});
+
+			// Center map to boat when it is clicked on
+			map.on('click', 'boat', function (e) {
+				map.flyTo({center: e.features[0].geometry.coordinates});
+			});
+
+			// Change cursor to pointer when over boat
+			map.on('mouseenter', 'boat', function () {
+				map.getCanvas().style.cursor = 'pointer';
+			});
+ 
+			// Change it back when not over boat
+			map.on('mouseleave', 'boat', function () {
+				map.getCanvas().style.cursor = '';
+			});
+
+			addEventListener("DOMContentLoaded", function() {
+				// Grab all of the elements with a class of command
+				// (which all of the buttons we just created have)
+				var commandButtons = document.querySelectorAll(".command");
+				for (var i=0, l=commandButtons.length; i<l; i++) {
+				var button = commandButtons[i];
+				// For each button, listen for the "click" event
+				button.addEventListener("click", function(e) {
+					// When a click happens, stop the button
+					// from submitting our form (if we have one)
+					e.preventDefault();
+
+					var clickedButton = e.target;
+					var command = clickedButton.value;
+
+					// Now we need to send the data to our server
+					// without reloading the page - this is the domain of
+					// AJAX (Asynchronous JavaScript And XML)
+					// We will create a new request object
+					// and set up a handler for the response
+					var request = new XMLHttpRequest();
+					request.onload = function() {
+						// We could do more interesting things with the response
+						// or, we could ignore it entirely
+						//alert(request.responseText);
+					};
+					// We point the request at the appropriate command
+					request.open("GET", "/" + command, true);
+					// and then we send it off
+					request.send();
+					});
+				}
+			}, true);
+		</script>
+	</body>
+</html>
