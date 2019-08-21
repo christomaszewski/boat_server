@@ -8,17 +8,15 @@ import rospy
 
 from functools import partial
 from std_msgs.msg import String
-from boat_server.msg import imu as imu_msg, gps as gps_msg, motor_cmd as motor_cmd_msg, eboard_cmd as eboard_cmd_msg
-
-supported_sensors = ['imu', 'gps']
+from boat_server import msg
 
 async def main():
 	outgoing_msgs = asyncio.Queue()
 	incoming_msgs = asyncio.Queue()
 
 	rospy.init_node('serial_comms', anonymous=True)
-	rospy.Subscriber('motor_cmd', motor_cmd_msg, partial(motor_cmd_callback, outgoing_msgs))
-	rospy.Subscriber('eboard_cmd', eboard_cmd_msg, partial(eboard_cmd_callback, outgoing_msgs))
+	rospy.Subscriber('motor_cmd', msg.motor_cmd, partial(motor_cmd_callback, outgoing_msgs))
+	rospy.Subscriber('eboard_cmd', msg.eboard_cmd, partial(eboard_cmd_callback, outgoing_msgs))
 
 	reader, writer = await serial_asyncio.open_serial_connection(url='/dev/ttyACM0', baudrate=115200)
 	await asyncio.sleep(3)
@@ -40,16 +38,18 @@ async def recv_serial(r, msgs):
 			rospy.loginfo(f'received: {msg.rstrip().decode()}')
 			msgs.put_nowait(msg.rstrip().decode())
 		except:
-			rospy.loginfo('an error occurred while decoding message')
+			rospy.loginfo('An error occurred while decoding message')
 
 async def publisher(msgs):
 	pub = rospy.Publisher('serial_in', String, queue_size=10)
-	imu_pub = rospy.Publisher('imu', imu_msg, queue_size=10)
-	gps_pub = rospy.Publisher('gps', gps_msg, queue_size=10)
+	imu_pub = rospy.Publisher('imu', msg.imu, queue_size=10)
+	gps_pub = rospy.Publisher('gps', msg.gps, queue_size=10)
 
 	while not rospy.is_shutdown():
 		msg = await msgs.get()
 		parsed_msg = dict()
+		parsed_msg['type'] = None
+
 		try:
 			parsed_msg = json.loads(msg)
 		except:
@@ -57,11 +57,14 @@ async def publisher(msgs):
 			parsed_msg['type'] = 'error'
 
 		if 'type' not in parsed_msg:
+			rospy.loginfo("Should not enter this if anymore!!!")
 			pub.publish(msg)
 
 		elif parsed_msg['type'] == 'imu':
-			data_array = parsed_msg['data'].split(',')
-			pub_msg = imu_msg()
+			data_array = parsed_msg['data'].split(',')[:6]
+			pub_msg = msg.imu(*data_array)
+			
+			"""
 			pub_msg.x = float(data_array[0])
 			pub_msg.y = float(data_array[1])
 			pub_msg.z = float(data_array[2])
@@ -69,6 +72,7 @@ async def publisher(msgs):
 			pub_msg.gyro_calib = int(data_array[4])
 			pub_msg.mag_calib = int(data_array[5])
 			pub_msg.accel_calib = int(data_array[6])
+			"""
 
 			imu_pub.publish(pub_msg)
 		elif parsed_msg['type'] == 'gps':
@@ -81,12 +85,9 @@ async def publisher(msgs):
 				lon_str = data_array[5]
 				lon = float(lon_str[:3]) + float(lon_str[3:])/60.
 				lon *= -1. if data_array[6] == 'W' else 1.
-				pub_msg = gps_msg()
-				pub_msg.lat = lat
-				pub_msg.long = lon
+				pub_msg = msg.gps(lat=lat, long=lon)
 
 				gps_pub.publish(pub_msg)
-
 		else:
 			pub.publish(msg)
 

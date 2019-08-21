@@ -5,7 +5,7 @@ import flask
 import rospy
 import threading
 from std_msgs.msg import String
-from boat_server.msg import imu as imu_msg, gps as gps_msg
+from boat_server import msg
 
 MAPBOX_ACCESS_KEY = 'pk.eyJ1IjoiY2hyaXN0b21hc3pld3NraSIsImEiOiJjanJtN2h1OTAwZ2lnM3ltdDBmZDFjc3FyIn0.2i83Ad3s4mi9DR6ZLG-CFg'
 
@@ -35,8 +35,8 @@ def gps_callback(gps_data):
 
 # ROS node init
 threading.Thread(target=lambda: rospy.init_node('gui_node', disable_signals=True)).start()
-rospy.Subscriber('gps', gps_msg, gps_callback)
-rospy.Subscriber('imu', imu_msg, imu_callback)
+rospy.Subscriber('gps', msg.gps, gps_callback)
+rospy.Subscriber('imu', msg.imu, imu_callback)
 
 # Setup flask server and define handlers for routes
 app = flask.Flask(__name__)

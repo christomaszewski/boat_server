@@ -2,8 +2,8 @@
 
 import rospy
 import utm
-import queue
 import numpy as np
+from threading import Lock
 
 #from boat_server.msg import motor_cmd as motor_cmd_msg, imu as imu_msg, gps as gps_msg
 from boat_server import msg
@@ -19,38 +19,50 @@ class BoatController():
 		self._r = rospy.Rate(1)
 
 		self._motor_pub = rospy.Publisher('motor_cmd', msg.motor_cmd, queue_size=10)
-		self._zero_cmd = msg.motor_cmd(m0=0.,m1=0.)
 
+		self._initialized = False
 		self._magnetic_declination = -(14. + 32./60.)
 		self._board_orientation_offset = 90
+		self._sufficient_proximity = 3.0
 
 		self._origin = None
-		self._curr_loc = None
+		self._curr_pos = None
 		self._curr_heading = None
 		self._autonomy_enabled = False
 		
-		self._waypoints = queue.Queue()
+		self._waypoint_lock = Lock()
+		self._waypoints = []
+		self._curr_waypoint_index = -1
+		self._prev_waypoint_index = -1
 		self._curr_target = None
 		self._curr_src = None
 
 	def start(self):
+		if not self.initialized:
+			rospy.loginfo("Cannot start controller until it is initialized.")
+			return
+
 		while not rospy.is_shutdown():
-			if not self._autonomy_enabled:
-				self._motor_pub.publish(self._zero_cmd)
-				self._r.sleep()
+			if self._autonomy_enabled:
+				diff = self._curr_target - self._curr_pos
+				dist = np.linalg.norm(diff)
+				if dist < self._sufficient_proximity:
+					# At current waypoint
+					self._motor_pub.publish(msg.motor_cmd(0., 0.))
+
 			else:
-				# PID control here
+				# Autonomy disabled, do nothing
 				pass
 
 	def _gps_callback(self, gps_data):
 		easting, northing, _, _ = utm.from_latlon(gps_data.lat, gps_data.long)
 		utm_coords = np.array([easting, northing])
 
-		# If this is the first gps reading received, assign origin
-		if self._origin is None:
-			self._origin = utm_coords
+		# If this is the first gps reading received, initialize controller
+		if not self.initialized:
+			self._initialize(utm_coords)
 
-		self._curr_loc = utm_coords - self._origin
+		self._curr_pos = utm_coords - self._origin
 
 	def _imu_callback(self, imu_data):
 		self._curr_heading = imu_data.x + self._magnetic_declination + self._board_orientation_offset
@@ -61,13 +73,16 @@ class BoatController():
 	def _autonomy_callback(self, autonomy_data):
 		pass
 
+	def _waypoint_available(self):
+		return len(self._waypoints) > 0
+
+	def _initialize(self, location):
+		self._origin = location
+
+
 	@property
 	def initialized(self):
-		required_init = [self._origin, self._curr_loc, self._curr_heading]
-		if any(val is None for val in required_init):
-			return False
-		else:
-			return True
+		return self._initialized
 
 
 if __name__ == '__main__':

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3.7
 import rospy
-from boat_server.msg import imu as imu_msg, gps as gps_msg
+from boat_server import msg
 import random
 
 def publisher():
-	gps_pub = rospy.Publisher('gps', gps_msg, queue_size=10)
-	imu_pub = rospy.Publisher('imu', imu_msg, queue_size=10)
+	gps_pub = rospy.Publisher('gps', msg.gps, queue_size=10)
+	imu_pub = rospy.Publisher('imu', msg.imu, queue_size=10)
 
 	rospy.init_node('test_publisher', anonymous=True)
 	r = rospy.Rate(10)
 
-	gps_pub_msg = gps_msg(lat=42.4858533, long=-71.2230221)
-	imu_pub_msg = imu_msg(x=0)
+	gps_pub_msg = msg.gps(lat=42.4858533, long=-71.2230221)
+	imu_pub_msg = msg.imu()
 
 	while not rospy.is_shutdown():
 		#rospy.loginfo(str)
