@@ -8,17 +8,14 @@ import rospy
 
 from functools import partial
 from std_msgs.msg import String
-from boat_server.msg import imu as imu_msg, 
-									 gps as gps_msg, 
-									 motor_cmd as motor_cmd_msg, 
-									 eboard_cmd as eboard_cmd_msg
+from boat_server.msg import imu as imu_msg, gps as gps_msg, motor_cmd as motor_cmd_msg, eboard_cmd as eboard_cmd_msg
 
 supported_sensors = ['imu', 'gps']
 
-async def main(callback_func):
+async def main():
 	outgoing_msgs = asyncio.Queue()
 	incoming_msgs = asyncio.Queue()
-	
+
 	rospy.init_node('serial_comms', anonymous=True)
 	rospy.Subscriber('motor_cmd', motor_cmd_msg, partial(motor_cmd_callback, outgoing_msgs))
 	rospy.Subscriber('eboard_cmd', eboard_cmd_msg, partial(eboard_cmd_callback, outgoing_msgs))
@@ -59,7 +56,10 @@ async def publisher(msgs):
 			rospy.loginfo(f"An error ocurred while parsing json message: {msg}")
 			parsed_msg['type'] = 'error'
 
-		if parsed_msg['type'] == 'imu':
+		if 'type' not in parsed_msg:
+			pub.publish(msg)
+
+		elif parsed_msg['type'] == 'imu':
 			data_array = parsed_msg['data'].split(',')
 			pub_msg = imu_msg()
 			pub_msg.x = float(data_array[0])
@@ -93,16 +93,18 @@ async def publisher(msgs):
 		msgs.task_done()
 
 def motor_cmd_callback(msg_queue, msg):
+	eol = "\n"
 	# Convert message to string
-	msg_string = f"\{\"m0\":\{\"v":{msg.m0}\},\"m1\":\{\"v":{msg.m1}\}\}\r\n"
+	msg_string = f'{{"m0":{{"v":{msg.m0}}},"m1":{{"v":{msg.m1}}}}}{eol}'
 	# Push coverted message string to output queue
 	msg_queue.put_nowait(msg_string)
 	rospy.loginfo(f"Pushing formatted motor message to output queue: {msg_string}")
 
 def eboard_cmd_callback(msg_queue, msg):
-	msg_string = f"\{\"e\":\{\"cmd\":\"{msg.cmd}\"\}\}\r\n"
+	eol = "\n"
+	msg_string = f'{{"e":{{"cmd":"{msg.cmd}"}}}}{eol}'
 	msg_queue.put_nowait(msg_string)
-	rospy.loginfo(f"Pushing formatted eboard message to output queue: {msg_string}")	
+	rospy.loginfo(f"Pushing formatted eboard message to output queue: {msg_string}")
 
 def sigint_handler(signum, frame):
 	for task in asyncio.Task.all_tasks():
@@ -110,4 +112,4 @@ def sigint_handler(signum, frame):
 
 if __name__=='__main__':
 	signal.signal(signal.SIGINT, sigint_handler)
-	asyncio.run(main(subscriber_callback))
+	asyncio.run(main())
