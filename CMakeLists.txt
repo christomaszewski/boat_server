@@ -53,6 +53,9 @@ add_message_files(
    gps.msg
    motor_cmd.msg
    eboard_cmd.msg
+   waypoint.msg
+   waypoint_cmd.msg
+   autonomy_cmd.msg
 )
 
 ## Generate services in the 'srv' folder
