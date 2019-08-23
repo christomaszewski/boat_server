@@ -5,8 +5,16 @@ import utm
 import numpy as np
 from threading import Lock
 
-#from boat_server.msg import motor_cmd as motor_cmd_msg, imu as imu_msg, gps as gps_msg
 from boat_server import msg
+
+class PIDController():
+
+	def __init__(self, kP=1., kI=0., kD=0., window_size=100):
+		self._kP = kP
+		self._kI = kI
+		self._kD = kD
+
+		self._prev_error = None
 
 class BoatController():
 

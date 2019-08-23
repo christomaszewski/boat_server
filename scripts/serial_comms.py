@@ -27,16 +27,16 @@ async def main():
 
 async def send_serial(w, msgs):
 	while True:
-		msg = await msgs.get()
-		w.write(msg.encode())
+		outgoing_msg = await msgs.get()
+		w.write(outgoing_msg.encode())
 		msgs.task_done()
 
 async def recv_serial(r, msgs):
 	while True:
-		msg = await r.readuntil(b'\n')
+		incoming_msg = await r.readuntil(b'\n')
 		try:
-			rospy.loginfo(f'received: {msg.rstrip().decode()}')
-			msgs.put_nowait(msg.rstrip().decode())
+			rospy.loginfo(f'received: {incoming_msg.rstrip().decode()}')
+			msgs.put_nowait(incoming_msg.rstrip().decode())
 		except:
 			rospy.loginfo('An error occurred while decoding message')
 
@@ -46,19 +46,19 @@ async def publisher(msgs):
 	gps_pub = rospy.Publisher('gps', msg.gps, queue_size=10)
 
 	while not rospy.is_shutdown():
-		msg = await msgs.get()
+		curr_msg = await msgs.get()
 		parsed_msg = dict()
 		parsed_msg['type'] = None
 
 		try:
-			parsed_msg = json.loads(msg)
+			parsed_msg = json.loads(curr_msg)
 		except:
 			rospy.loginfo(f"An error ocurred while parsing json message: {msg}")
 			parsed_msg['type'] = 'error'
 
 		if 'type' not in parsed_msg:
 			rospy.loginfo("Should not enter this if anymore!!!")
-			pub.publish(msg)
+			pub.publish(curr_msg)
 
 		elif parsed_msg['type'] == 'imu':
 			data_array = parsed_msg['data'].split(',')[:6]
@@ -89,21 +89,21 @@ async def publisher(msgs):
 
 				gps_pub.publish(pub_msg)
 		else:
-			pub.publish(msg)
+			pub.publish(curr_msg)
 
 		msgs.task_done()
 
-def motor_cmd_callback(msg_queue, msg):
+def motor_cmd_callback(msg_queue, motor_cmd):
 	eol = "\n"
 	# Convert message to string
-	msg_string = f'{{"m0":{{"v":{msg.m0}}},"m1":{{"v":{msg.m1}}}}}{eol}'
+	msg_string = f'{{"m0":{{"v":{motor_cmd.m0}}},"m1":{{"v":{motor_cmd.m1}}}}}{eol}'
 	# Push coverted message string to output queue
 	msg_queue.put_nowait(msg_string)
 	rospy.loginfo(f"Pushing formatted motor message to output queue: {msg_string}")
 
-def eboard_cmd_callback(msg_queue, msg):
+def eboard_cmd_callback(msg_queue, eboard_cmd):
 	eol = "\n"
-	msg_string = f'{{"e":{{"cmd":"{msg.cmd}"}}}}{eol}'
+	msg_string = f'{{"e":{{"cmd":"{eboard_cmd.cmd}"}}}}{eol}'
 	msg_queue.put_nowait(msg_string)
 	rospy.loginfo(f"Pushing formatted eboard message to output queue: {msg_string}")
 
