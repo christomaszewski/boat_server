@@ -61,7 +61,7 @@ async def publisher(msgs):
 			pub.publish(curr_msg)
 
 		elif parsed_msg['type'] == 'imu':
-			data_array = parsed_msg['data'].split(',')[:6]
+			data_array = parsed_msg['data'].split(',')[:7]
 			pub_msg = msg.imu(*data_array)
 			
 			"""

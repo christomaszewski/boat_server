@@ -9,23 +9,24 @@ from boat_server import msg
 
 MAPBOX_ACCESS_KEY = 'pk.eyJ1IjoiY2hyaXN0b21hc3pld3NraSIsImEiOiJjanJtN2h1OTAwZ2lnM3ltdDBmZDFjc3FyIn0.2i83Ad3s4mi9DR6ZLG-CFg'
 
-LEFT, RIGHT, FORWARD, REVERSE = "left", "right", "forward", "reverse"
+LEFT, RIGHT, FORWARD, REVERSE, WAYPOINT = "left", "right", "forward", "reverse", "waypoint"
 AVAILABLE_COMMANDS = {
 	'Left': LEFT,
 	'Right': RIGHT,
 	'Forward': FORWARD,
-	'Reverse': REVERSE
+	'Reverse': REVERSE,
+	'Waypoint': WAYPOINT
 }
 
 last_gps_point = (42.4858533, -71.2230221)
 last_heading = 90
-magnetic_declination = -(14. + 32./60.)
+magnetic_declination = 14. + 25./60.
 board_orientation_offset = 90
 
 # Define ROS subscriber callback functions
 def imu_callback(imu_data):
 	global last_heading
-	last_heading = (imu_data.x + magnetic_declination + board_orientation_offset)
+	last_heading = imu_data.x
 	rospy.loginfo(f"Received imu data: {imu_data.x}")
 
 def gps_callback(gps_data):

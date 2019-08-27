@@ -19,10 +19,10 @@ def publisher():
 		imu_pub.publish(imu_pub_msg)
 		r.sleep()
 
-		gps_pub_msg.lat += 0.000001*(random.random()-0.5)
-		gps_pub_msg.long += 0.000001*(random.random()-0.5)
-		imu_pub_msg.x += (random.random()-0.5)*5.
-		imu_pub_msg.x %= 360
+		#gps_pub_msg.lat += 0.000001*(random.random()-0.5)
+		#gps_pub_msg.long += 0.000001*(random.random()-0.5)
+		#imu_pub_msg.x += (random.random()-0.5)*5.
+		#imu_pub_msg.x %= 360
 		#str = '{\"m0\":{\"v\":0.0}}\n'
 
 
