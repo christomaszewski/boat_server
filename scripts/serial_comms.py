@@ -62,19 +62,19 @@ async def publisher(msgs):
 
 		elif parsed_msg['type'] == 'imu':
 			data_array = parsed_msg['data'].split(',')[:7]
-			pub_msg = msg.imu(*data_array)
-			
-			"""
-			pub_msg.x = float(data_array[0])
-			pub_msg.y = float(data_array[1])
-			pub_msg.z = float(data_array[2])
-			pub_msg.sys_calib = int(data_array[3])
-			pub_msg.gyro_calib = int(data_array[4])
-			pub_msg.mag_calib = int(data_array[5])
-			pub_msg.accel_calib = int(data_array[6])
-			"""
 
-			imu_pub.publish(pub_msg)
+			if len(data_array) == 7:
+				pub_msg = msg.imu()	
+				pub_msg.x = float(data_array[0])
+				pub_msg.y = float(data_array[1])
+				pub_msg.z = float(data_array[2])
+				pub_msg.sys_calib = int(data_array[3])
+				pub_msg.gyro_calib = int(data_array[4])
+				pub_msg.mag_calib = int(data_array[5])
+				pub_msg.accel_calib = int(data_array[6])
+				
+				imu_pub.publish(pub_msg)
+		
 		elif parsed_msg['type'] == 'gps':
 			data_array = parsed_msg['data'].split(',')
 			if data_array[0] == '$GPRMC' and data_array[2] == 'A':

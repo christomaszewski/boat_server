@@ -25,6 +25,13 @@ def publisher():
 		motor_cmd_pub.publish(motor_msg)
 		r.sleep()
 
+	for vel in np.linspace(0.0, 0.1, 30):
+		motor_cmd_pub.publish(motor_cmd_msg(m0=vel, m1=vel))
+		r.sleep()
+
+	for vel in np.linspace(0.1, 0., 30):
+		motor_cmd_pub.publish(motor_cmd_msg(m0=vel, m1=vel))
+		r.sleep()
 
 	eboard_msg = eboard_cmd_msg(cmd='disarm')
 	eboard_cmd_pub.publish(eboard_msg)

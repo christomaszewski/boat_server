@@ -18,7 +18,9 @@ AVAILABLE_COMMANDS = {
 	'Waypoint': WAYPOINT
 }
 
-last_gps_point = (42.4858533, -71.2230221)
+#current_waypoints = [[-71.241844,42.405818],[-71.242497,42.405859],[-71.24200225032979, 42.406372539763396]]
+current_waypoints = []
+last_gps_point = (42.405818, -71.241844)
 last_heading = 90
 magnetic_declination = 14. + 25./60.
 board_orientation_offset = 90
@@ -34,10 +36,15 @@ def gps_callback(gps_data):
 	last_gps_point = (gps_data.lat, gps_data.long)
 	rospy.loginfo(f"Received gps data: {gps_data.lat}, {gps_data.long}")
 
+def wp_callback(wp_data):
+	global current_waypoints
+	current_waypoints = [list(w.coords[::-1]) for w in wp_data.waypoints]
+
 # ROS node init
 threading.Thread(target=lambda: rospy.init_node('gui_node', disable_signals=True)).start()
 rospy.Subscriber('gps', msg.gps, gps_callback)
 rospy.Subscriber('imu', msg.imu, imu_callback)
+rospy.Subscriber('waypoint_cmd', msg.waypoint_cmd, wp_callback)
 
 # Setup flask server and define handlers for routes
 app = flask.Flask(__name__)
@@ -53,6 +60,11 @@ def curr_loc():
 	global last_heading
 	coord_str = f"[{last_gps_point[1]},{last_gps_point[0]}]"
 	return flask.render_template('curr_loc.json', COORDS=coord_str, HEADING=last_heading)
+
+@app.route('/curr_wp')
+def curr_wp():
+	global current_waypoints
+	return flask.render_template('curr_wp.json', waypoints=current_waypoints)
 
 @app.route('/<cmd>')
 def command(cmd=None):

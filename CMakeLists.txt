@@ -56,6 +56,7 @@ add_message_files(
    waypoint.msg
    waypoint_cmd.msg
    autonomy_cmd.msg
+   debug_pos.msg
 )
 
 ## Generate services in the 'srv' folder

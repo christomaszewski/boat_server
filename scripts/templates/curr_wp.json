@@ -1,0 +1,16 @@
+{
+"type": "FeatureCollection",
+"features": [{
+"type": "Feature",
+"geometry": {
+"type": "LineString",
+"coordinates": {{ waypoints }}
+}
+}{% for coords in waypoints %}, {
+"type": "Feature",
+"geometry": {
+"type": "Point",
+"coordinates": {{ coords }}
+}
+}{% endfor %}]
+}

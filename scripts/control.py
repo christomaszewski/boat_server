@@ -7,6 +7,8 @@ from threading import Lock
 from collections import deque
 
 from boat_server import msg
+from std_msgs.msg import Float64
+
 
 class PIDController():
 
@@ -20,7 +22,7 @@ class PIDController():
 		self._error_integral = 0.
 		self._error_derivative = 0.
 
-		self._signal_limit = 1.
+		self._signal_limit = 0.3
 
 	def reset(self):
 		self._error_integral = 0.
@@ -59,9 +61,9 @@ class BoatController():
 		self._initialized = False
 
 		# North should be 0
-		self._magnetic_declination = 14. + 25./60.
+		self._magnetic_declination = 0#14. + 25./60.
 		self._imu_transform = lambda x: np.radians((180-((x+90-self._magnetic_declination)%360)))
-		self._sufficient_proximity = 3.0
+		self._sufficient_proximity = 1.0
 		self._max_lookahead = 5.0
 
 		self._origin = None
@@ -80,6 +82,14 @@ class BoatController():
 		self._target_seg_angle = 0.
 
 		self._pid = PIDController()
+
+		# Debugging publishers
+		self._pos_pub = rospy.Publisher('debug_pos', msg.debug_pos, queue_size=10)
+		self._target_pub = rospy.Publisher('debug_target', msg.debug_pos, queue_size=10)
+		self._src_pub = rospy.Publisher('debug_src', msg.debug_pos, queue_size=10)
+		self._lookahead_pub = rospy.Publisher('debug_lookahead', msg.debug_pos, queue_size=10)
+		self._heading_pub = rospy.Publisher('debug_heading', Float64, queue_size=10)
+		self._desired_heading_pub = rospy.Publisher('debug_desired', Float64, queue_size=10)
 
 	def start(self):
 		if not self.initialized:
@@ -114,6 +124,9 @@ class BoatController():
 							self._curr_src = np.copy(self._waypoints[self._prev_waypoint_index]) - self._origin
 
 						self._curr_target = np.copy(self._waypoints[self._curr_waypoint_index]) - self._origin
+
+						self._src_pub.publish(msg.debug_pos(*self._curr_src))
+						self._target_pub.publish(msg.debug_pos(*self._curr_target))
 						
 						rospy.loginfo("Starting new waypoint...")
 						rospy.loginfo(f"origin:{self._origin}, src:{self._curr_src}, target:{self._curr_target}, boat position:{self._curr_pos}")
@@ -157,6 +170,8 @@ class BoatController():
 					else:
 						lookahead_point = (projected_length+lookahead_dist)*(self._target_seg/self._target_seg_length) + self._curr_src
 
+					self._lookahead_pub.publish(msg.debug_pos(*lookahead_point))
+
 					rospy.loginfo(f"current boat position: {self._curr_pos}, lookahead point: {lookahead_point}")
 
 					diff_from_lookahead = lookahead_point - self._curr_pos
@@ -164,9 +179,11 @@ class BoatController():
 					desired_heading = np.arctan2(*diff_from_lookahead[::-1])
 					heading_error = self._normalize_angle(desired_heading - self._curr_heading)
 
+					self._desired_heading_pub.publish(desired_heading)
+
 					heading_signal = self._pid.update(heading_error, rospy.get_time())
 					rospy.loginfo(f"desired_heading:{desired_heading}, current_heading:{self._curr_heading}, heading_error:{heading_error}, heading_signal:{heading_signal}")	
-					desired_thrust = 1.0
+					desired_thrust = 0.1
 
 					m0 = np.clip(desired_thrust - heading_signal, -1., 1.)
 					m1 = np.clip(desired_thrust + heading_signal, -1., 1.)
@@ -189,8 +206,12 @@ class BoatController():
 		
 		self._curr_pos = utm_coords - self._origin
 
+		self._pos_pub.publish(msg.debug_pos(*self._curr_pos))
+
 	def _imu_callback(self, imu_data):
 		self._curr_heading = self._imu_transform(imu_data.x)
+
+		self._heading_pub.publish(self._curr_heading)
 
 	def _waypoint_callback(self, waypoint_cmd):
 		new_waypoint_list = [np.array(utm.from_latlon(*w.coords)[:2]) for w in waypoint_cmd.waypoints]
