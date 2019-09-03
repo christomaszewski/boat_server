@@ -62,9 +62,9 @@ class BoatController():
 
 		# North should be 0
 		self._magnetic_declination = 0#14. + 25./60.
-		self._imu_transform = lambda x: np.radians((180-((x+90-self._magnetic_declination)%360)))
+		self._imu_transform = lambda x: np.radians((360-((x-270-self._magnetic_declination)%360)))
 		self._sufficient_proximity = 1.0
-		self._max_lookahead = 5.0
+		self._max_lookahead = 3.0
 
 		self._origin = None
 		self._curr_pos = None
@@ -77,7 +77,7 @@ class BoatController():
 		self._prev_waypoint_index = -1
 		self._curr_target = np.zeros(2)
 		self._curr_src = np.zeros(2)
-		self._target_seg = None
+		self._target_seg = self._curr_target - self._curr_src
 		self._target_seg_length = 0.
 		self._target_seg_angle = 0.
 

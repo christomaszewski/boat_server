@@ -10,7 +10,6 @@ import utm
 from boat_server import msg
 from std_msgs.msg import Float64
 import time
-import cartopy as 
 
 #plt.switch_backend('agg')
 plt.ion()
@@ -19,8 +18,8 @@ class ControllerViz(object):
 	def __init__(self):
 		self._fig = plt.figure(figsize=(15,12))
 		self._ax = self._fig.add_axes([0.05, 0.05, 0.9, 0.9])
-		self._ax.set_xlim(-50., 50.)
-		self._ax.set_ylim(-10., 50.)
+		self._ax.set_xlim(-20., 20.)
+		self._ax.set_ylim(-10., 20.)
 		self._ax.grid()
 
 		self._target = np.array([3.,7.])
