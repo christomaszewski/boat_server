@@ -53,7 +53,7 @@ async def publisher(msgs):
 		try:
 			parsed_msg = json.loads(curr_msg)
 		except:
-			rospy.loginfo(f"An error ocurred while parsing json message: {msg}")
+			rospy.loginfo(f"An error ocurred while parsing json message: {curr_msg}")
 			parsed_msg['type'] = 'error'
 
 		if 'type' not in parsed_msg:
