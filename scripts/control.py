@@ -12,7 +12,8 @@ from std_msgs.msg import Float64
 
 class PIDController():
 
-	def __init__(self, kP=1., kI=0., kD=0.):
+	def __init__(self, kP=0.35, kI=0., kD=0.):
+		""" Initializes PID controller. Max error magnitude is pi in our case """
 		self._kP = kP
 		self._kI = kI
 		self._kD = kD
@@ -22,7 +23,7 @@ class PIDController():
 		self._error_integral = 0.
 		self._error_derivative = 0.
 
-		self._signal_limit = 0.3
+		self._signal_limit = 1.0
 
 	def reset(self):
 		self._error_integral = 0.
@@ -53,7 +54,7 @@ class BoatController():
 		rospy.Subscriber('waypoint_cmd', msg.waypoint_cmd, self._waypoint_callback)
 		rospy.Subscriber('autonomy_cmd', msg.autonomy_cmd, self._autonomy_callback)
 
-		self._r = rospy.Rate(1)
+		self._r = rospy.Rate(10)
 
 		self._motor_pub = rospy.Publisher('motor_cmd', msg.motor_cmd, queue_size=10)
 		self._eboard_pub = rospy.Publisher('eboard_cmd', msg.eboard_cmd, queue_size=10)
@@ -61,10 +62,13 @@ class BoatController():
 		self._initialized = False
 
 		# North should be 0
-		self._magnetic_declination = 0#14. + 25./60.
-		self._imu_transform = lambda x: np.radians((360-((x-270-self._magnetic_declination)%360)))
-		self._sufficient_proximity = 1.0
+		self._magnetic_declination = 14. + 25./60.
+		self._imu_transform = lambda x: np.radians(360-((x-270-self._magnetic_declination)%360))
+		self._sufficient_proximity = 1.5
 		self._max_lookahead = 3.0
+
+		self._base_thrust = 0.2
+		self._min_thrust = 0.0
 
 		self._origin = None
 		self._curr_pos = None
@@ -97,6 +101,7 @@ class BoatController():
 			return
 
 		while not rospy.is_shutdown():
+			self._r.sleep()
 			if self._autonomy_enabled:
 
 				with self._waypoint_lock:
@@ -104,11 +109,11 @@ class BoatController():
 						# waypoint indices messed up. stop motors and loginfo
 						self._motor_pub.publish(msg.motor_cmd(m0=0.,m1=0.))
 						self._curr_waypoint_index = self._prev_waypoint_index = -1
-						rospy.loginfo("Error: prev wp index > curr wp index")
+						rospy.logwarn("Error: prev wp index > curr wp index")
 
 					elif self._curr_waypoint_index >= len(self._waypoints):
 					 	# All waypoints have been reached, do nothing
-					 	rospy.loginfo("Warning: curr wp index exceeds # of wps")
+					 	rospy.logwarn("Warning: curr wp index exceeds # of wps")
 					 	pass
 					elif self._curr_waypoint_index < 0:
 						# No waypoints available so just send 0 command to motors
@@ -141,7 +146,7 @@ class BoatController():
 				# Compute distance to current waypoint
 				diff_from_target = self._curr_target - self._curr_pos
 				dist_to_target = np.linalg.norm(diff_from_target)
-				rospy.loginfo(f"distance to current waypoint: {dist_to_target}")
+				rospy.loginfo_throttle(5, f"distance to current waypoint: {dist_to_target}")
 				if dist_to_target < self._sufficient_proximity:
 					# At current waypoint
 					rospy.loginfo(f"Boat at current target: {self._curr_target}")
@@ -156,13 +161,13 @@ class BoatController():
 					dist_from_src = np.linalg.norm(curr_seg)
 					angle_from_src = np.arctan2(*curr_seg[::-1])
 
-					rospy.loginfo(f"curr_seg: {curr_seg}, dist_from_src: {dist_from_src}, angle_from_src: {angle_from_src}")
+					rospy.loginfo_throttle(1,f"curr_seg: {curr_seg}, dist_from_src: {dist_from_src}, angle_from_src: {angle_from_src}")
 
 					projected_length = np.dot(self._target_seg, curr_seg)/self._target_seg_length
 					dist_from_ideal_line = abs(np.cross(self._target_seg, curr_seg))/self._target_seg_length
 					lookahead_dist = self._max_lookahead*(1-np.tanh(0.2*abs(dist_from_ideal_line)))
 
-					rospy.loginfo(f"projected_length: {projected_length}, dist_from_ideal_line: {dist_from_ideal_line}, lookahead_dist: {lookahead_dist}")
+					rospy.loginfo_throttle(1,f"projected_length: {projected_length}, dist_from_ideal_line: {dist_from_ideal_line}, lookahead_dist: {lookahead_dist}")
 
 					# If lookahead point is beyond target just use target
 					if projected_length + lookahead_dist > self._target_seg_length:
@@ -172,7 +177,7 @@ class BoatController():
 
 					self._lookahead_pub.publish(msg.debug_pos(*lookahead_point))
 
-					rospy.loginfo(f"current boat position: {self._curr_pos}, lookahead point: {lookahead_point}")
+					rospy.loginfo_throttle(1,f"current boat position: {self._curr_pos}, lookahead point: {lookahead_point}")
 
 					diff_from_lookahead = lookahead_point - self._curr_pos
 
@@ -182,19 +187,26 @@ class BoatController():
 					self._desired_heading_pub.publish(desired_heading)
 
 					heading_signal = self._pid.update(heading_error, rospy.get_time())
-					rospy.loginfo(f"desired_heading:{desired_heading}, current_heading:{self._curr_heading}, heading_error:{heading_error}, heading_signal:{heading_signal}")	
-					desired_thrust = 0.1
+					rospy.loginfo_throttle(1,f"desired_heading:{desired_heading}, current_heading:{self._curr_heading}, heading_error:{heading_error}, heading_signal:{heading_signal}")	
+					
+					# Decay desired thrust as vehicle gets close to target
+					desired_thrust = self._base_thrust
+					if dist_to_target < 2*self._sufficient_proximity:
+						desired_thrust *= (dist_to_target/self._sufficient_proximity - 1)
+
+					# Limit desired thrust to >= 0
+					desired_thrust = max(0., desired_thrust)
 
 					m0 = np.clip(desired_thrust - heading_signal, -1., 1.)
 					m1 = np.clip(desired_thrust + heading_signal, -1., 1.)
 
-					rospy.loginfo(f"sending motor signals m0:{m0}, m1:{m1}")
+					rospy.loginfo_throttle(1,f"sending motor signals m0:{m0}, m1:{m1}")
 
 					self._motor_pub.publish(msg.motor_cmd(m0, m1))
 
 			else:
 				# Autonomy disabled, do nothing
-				rospy.loginfo("Autonomy disabled.")
+				rospy.loginfo_throttle(1,"Autonomy disabled.")
 				
 	def _gps_callback(self, gps_data):
 		utm_coords = np.array(utm.from_latlon(gps_data.lat, gps_data.long)[:2])
@@ -243,13 +255,12 @@ class BoatController():
 		self._initialized = self._curr_heading is not None and self._origin is not None
 		return self._initialized
 
-
 if __name__ == '__main__':
 	rospy.init_node('boat_controller', anonymous=True)
 	boat_ctrl = BoatController()
 
 	while not boat_ctrl.initialized:
-		rospy.loginfo(f"Waiting for boat controller to initialize")
+		rospy.loginfo_throttle(5,f"Waiting for boat controller to initialize")
 
 	rospy.loginfo(f"Boat controller initialized, starting up")
 

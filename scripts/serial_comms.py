@@ -35,10 +35,10 @@ async def recv_serial(r, msgs):
 	while True:
 		incoming_msg = await r.readuntil(b'\n')
 		try:
-			rospy.loginfo(f'received: {incoming_msg.rstrip().decode()}')
+			rospy.logdebug(f'received: {incoming_msg.rstrip().decode()}')
 			msgs.put_nowait(incoming_msg.rstrip().decode())
 		except:
-			rospy.loginfo('An error occurred while decoding message')
+			rospy.logwarn('An error occurred while decoding message')
 
 async def publisher(msgs):
 	pub = rospy.Publisher('serial_in', String, queue_size=10)
@@ -53,11 +53,11 @@ async def publisher(msgs):
 		try:
 			parsed_msg = json.loads(curr_msg)
 		except:
-			rospy.loginfo(f"An error ocurred while parsing json message: {curr_msg}")
+			rospy.logwarn(f"An error ocurred while parsing json message: {curr_msg}")
 			parsed_msg['type'] = 'error'
 
 		if 'type' not in parsed_msg:
-			rospy.loginfo("Should not enter this if anymore!!!")
+			rospy.logdebug("Should not enter this if anymore!!!")
 			pub.publish(curr_msg)
 
 		elif parsed_msg['type'] == 'imu':
@@ -99,13 +99,13 @@ def motor_cmd_callback(msg_queue, motor_cmd):
 	msg_string = f'{{"m0":{{"v":{motor_cmd.m0}}},"m1":{{"v":{motor_cmd.m1}}}}}{eol}'
 	# Push coverted message string to output queue
 	msg_queue.put_nowait(msg_string)
-	rospy.loginfo(f"Pushing formatted motor message to output queue: {msg_string}")
+	rospy.logdebug(f"Pushing formatted motor message to output queue: {msg_string}")
 
 def eboard_cmd_callback(msg_queue, eboard_cmd):
 	eol = "\n"
 	msg_string = f'{{"e":{{"cmd":"{eboard_cmd.cmd}"}}}}{eol}'
 	msg_queue.put_nowait(msg_string)
-	rospy.loginfo(f"Pushing formatted eboard message to output queue: {msg_string}")
+	rospy.logdebug(f"Pushing formatted eboard message to output queue: {msg_string}")
 
 def sigint_handler(signum, frame):
 	for task in asyncio.Task.all_tasks():

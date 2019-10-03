@@ -12,7 +12,7 @@ if __name__ == '__main__':
 
 	# Alpha
 	#waypoint_list.append(np.array([42.405818,-71.241844]))
-	#waypoint_list.append(np.array([42.4057352,-71.2418894]))
+	waypoint_list.append(np.array([42.4057352,-71.2418894]))
 
 	# Bravo
 	#waypoint_list.append(np.array([42.405859,-71.242497]))
@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
 	# Return to Alpha
 	#waypoint_list.append(np.array([42.405818,-71.241844]))
-	waypoint_list.append(np.array([42.4056842, -71.2418720]))
+	#waypoint_list.append(np.array([42.484911, -71.221840]))
 
 	waypoints = [msg.waypoint(coords=wp) for wp in waypoint_list]
 	waypoint_cmd = msg.waypoint_cmd(waypoints=waypoints)
