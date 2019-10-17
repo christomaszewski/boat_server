@@ -44,6 +44,7 @@ async def publisher(msgs):
 	pub = rospy.Publisher('serial_in', String, queue_size=10)
 	imu_pub = rospy.Publisher('imu', msg.imu, queue_size=10)
 	gps_pub = rospy.Publisher('gps', msg.gps, queue_size=10)
+	batt_pub = rospy.Publisher('batt', Float64, queue_size=10)
 
 	while not rospy.is_shutdown():
 		curr_msg = await msgs.get()
@@ -88,6 +89,11 @@ async def publisher(msgs):
 				pub_msg = msg.gps(lat=lat, long=lon)
 
 				gps_pub.publish(pub_msg)
+
+		elif parsed_msg['type'] == 'battery':
+			batt_voltage = float(parsed_msg['data'])
+			batt_pub.publish(batt_voltage)
+
 		else:
 			pub.publish(curr_msg)
 

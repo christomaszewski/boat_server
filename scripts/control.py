@@ -23,7 +23,7 @@ class PIDController():
 		self._error_integral = 0.
 		self._error_derivative = 0.
 
-		self._signal_limit = 1.0
+		self._signal_limit = 2.0
 
 	def reset(self):
 		self._error_integral = 0.
@@ -46,6 +46,9 @@ class PIDController():
 
 		return output_signal
 
+	def debug(self):
+		return (self._prev_time, self._prev_error, self._error_integral, self._error_derivative)
+
 class BoatController():
 
 	def __init__(self):
@@ -64,11 +67,12 @@ class BoatController():
 		# North should be 0
 		self._magnetic_declination = 14. + 25./60.
 		self._imu_transform = lambda x: np.radians(360-((x-270-self._magnetic_declination)%360))
-		self._sufficient_proximity = 1.5
+		self._sufficient_proximity = 3.
 		self._max_lookahead = 3.0
 
 		self._base_thrust = 0.2
 		self._min_thrust = 0.0
+		self._deccel_proximity = 2*self._sufficient_proximity
 
 		self._origin = None
 		self._curr_pos = None
@@ -77,10 +81,14 @@ class BoatController():
 		
 		self._waypoint_lock = Lock()
 		self._waypoints = []
+		self._waypoints_available = False
 		self._curr_waypoint_index = -1
 		self._prev_waypoint_index = -1
 		self._curr_target = np.zeros(2)
 		self._curr_src = np.zeros(2)
+		self._next_target = None
+		self._next_seg = None
+		self._next_seg_angle = 0.
 		self._target_seg = self._curr_target - self._curr_src
 		self._target_seg_length = 0.
 		self._target_seg_angle = 0.
@@ -106,7 +114,7 @@ class BoatController():
 
 				with self._waypoint_lock:
 					if self._prev_waypoint_index > self._curr_waypoint_index:
-						# waypoint indices messed up. stop motors and loginfo
+						# waypoint indices messed up. stop motors and warn
 						self._motor_pub.publish(msg.motor_cmd(m0=0.,m1=0.))
 						self._curr_waypoint_index = self._prev_waypoint_index = -1
 						rospy.logwarn("Error: prev wp index > curr wp index")
@@ -114,20 +122,24 @@ class BoatController():
 					elif self._curr_waypoint_index >= len(self._waypoints):
 					 	# All waypoints have been reached, do nothing
 					 	rospy.logwarn("Warning: curr wp index exceeds # of wps")
-					 	pass
+					 	
 					elif self._curr_waypoint_index < 0:
 						# No waypoints available so just send 0 command to motors
-						rospy.loginfo("No waypoints available, sending 0 motor signal")
+						rospy.loginfo_throttle(1,"No waypoints available, sending 0 motor signal")
 						self._motor_pub.publish(msg.motor_cmd(m0=0.,m1=0.))
 
 					elif self._curr_waypoint_index != self._prev_waypoint_index:
-						# new waypoints received or just completed a waypoint
-						# reset pid stuff, update source, set prev_wp = curr_wp, update target
+						# New waypoints received or just completed a waypoint
+						# Set flag to indicate waypoints are available
+						self._waypoints_available = True
+
+						# If you are heading to the first wp, set source to current position, else use last wp
 						if self._curr_waypoint_index == 0:
 							self._curr_src = np.copy(self._curr_pos)
 						elif self._prev_waypoint_index > -1:
 							self._curr_src = np.copy(self._waypoints[self._prev_waypoint_index]) - self._origin
 
+						# Update target 
 						self._curr_target = np.copy(self._waypoints[self._curr_waypoint_index]) - self._origin
 
 						self._src_pub.publish(msg.debug_pos(*self._curr_src))
@@ -136,38 +148,61 @@ class BoatController():
 						rospy.loginfo("Starting new waypoint...")
 						rospy.loginfo(f"origin:{self._origin}, src:{self._curr_src}, target:{self._curr_target}, boat position:{self._curr_pos}")
 
+						# Set prev wp index to curr wp index, indicating boat underway
 						self._prev_waypoint_index = self._curr_waypoint_index
+
+						# Compute target segment characteristics
 						self._target_seg = self._curr_target - self._curr_src
 						self._target_seg_length = np.linalg.norm(self._target_seg)
 						self._target_seg_angle = np.arctan2(*self._target_seg[::-1])
 
+						# If there is a waypoint after the current one, compute next segment characteristics
+						if len(self._waypoints) > self._curr_waypoint_index + 1:
+							self._next_target = np.copy(self._waypoints[self._curr_waypoint_index+1]) - self._origin
+							self._next_seg = self._next_target - self._curr_target
+							self._next_seg_angle = np.arctan2(*self._next_seg[::-1])
+						else:
+							self._next_target = None
+							self._next_seg = None
+							self._next_seg_angle = 0.
+
+						# Reset derivative and integrator in PID heading controller
 						self._pid.reset()
+
+				# If there is no waypoints available, don't execute line following logic
+				if not self._waypoints_available:
+					continue
 
 				# Compute distance to current waypoint
 				diff_from_target = self._curr_target - self._curr_pos
 				dist_to_target = np.linalg.norm(diff_from_target)
-				rospy.loginfo_throttle(5, f"distance to current waypoint: {dist_to_target}")
+				rospy.loginfo_throttle(1, f"Distance to current waypoint: {dist_to_target}")
 				if dist_to_target < self._sufficient_proximity:
 					# At current waypoint
-					rospy.loginfo(f"Boat at current target: {self._curr_target}")
+					rospy.loginfo_throttle(1, f"Boat at current target: {self._curr_target}")
 					self._motor_pub.publish(msg.motor_cmd(0., 0.))
 					with self._waypoint_lock:
-						if self._prev_waypoint_index == self._curr_waypoint_index and len(self._waypoints) > self._curr_waypoint_index + 1:
-							self._curr_waypoint_index += 1
-							rospy.loginfo(f"Waypoint reached, incrementing waypoint index to {self._curr_waypoint_index}")
+						# Check to see that no new waypoints have been received
+						if self._prev_waypoint_index == self._curr_waypoint_index:
+							# If more waypoints are available advance the waypoint index
+							if len(self._waypoints) > self._curr_waypoint_index + 1:
+								self._curr_waypoint_index += 1
+								rospy.loginfo(f"Waypoint reached, incrementing waypoint index to {self._curr_waypoint_index}")
+							# Else if there are no waypoints remaining and station keeping is false? 
+							# For now, keep last waypoint and hold position
 				else:
 					# compute motor signals using line following logic and pid heading controller
 					curr_seg = self._curr_pos - self._curr_src
 					dist_from_src = np.linalg.norm(curr_seg)
 					angle_from_src = np.arctan2(*curr_seg[::-1])
 
-					rospy.loginfo_throttle(1,f"curr_seg: {curr_seg}, dist_from_src: {dist_from_src}, angle_from_src: {angle_from_src}")
+					#rospy.loginfo_throttle(1,f"curr_seg: {curr_seg}, dist_from_src: {dist_from_src}, angle_from_src: {angle_from_src}")
 
 					projected_length = np.dot(self._target_seg, curr_seg)/self._target_seg_length
 					dist_from_ideal_line = abs(np.cross(self._target_seg, curr_seg))/self._target_seg_length
 					lookahead_dist = self._max_lookahead*(1-np.tanh(0.2*abs(dist_from_ideal_line)))
 
-					rospy.loginfo_throttle(1,f"projected_length: {projected_length}, dist_from_ideal_line: {dist_from_ideal_line}, lookahead_dist: {lookahead_dist}")
+					#rospy.loginfo_throttle(1,f"projected_length: {projected_length}, dist_from_ideal_line: {dist_from_ideal_line}, lookahead_dist: {lookahead_dist}")
 
 					# If lookahead point is beyond target just use target
 					if projected_length + lookahead_dist > self._target_seg_length:
@@ -177,7 +212,7 @@ class BoatController():
 
 					self._lookahead_pub.publish(msg.debug_pos(*lookahead_point))
 
-					rospy.loginfo_throttle(1,f"current boat position: {self._curr_pos}, lookahead point: {lookahead_point}")
+					#rospy.loginfo_throttle(1,f"current boat position: {self._curr_pos}, lookahead point: {lookahead_point}")
 
 					diff_from_lookahead = lookahead_point - self._curr_pos
 
@@ -189,18 +224,27 @@ class BoatController():
 					heading_signal = self._pid.update(heading_error, rospy.get_time())
 					rospy.loginfo_throttle(1,f"desired_heading:{desired_heading}, current_heading:{self._curr_heading}, heading_error:{heading_error}, heading_signal:{heading_signal}")	
 					
-					# Decay desired thrust as vehicle gets close to target
-					desired_thrust = self._base_thrust
-					if dist_to_target < 2*self._sufficient_proximity:
-						desired_thrust *= (dist_to_target/self._sufficient_proximity - 1)
 
-					# Limit desired thrust to >= 0
+					# Compute the desired thrust and motor signals
+					desired_thrust = self._base_thrust
+
+					# If we are approaching the current waypoint, determine thrust adjustment
+					if dist_to_target < self._deccel_proximity
+						# If this is the last waypoint, decay thrust according to proximity
+						if self._next_target is None:
+							desired_thrust *= (dist_to_target/self._sufficient_proximity - 1)
+						# Otherwise scale thrust based on angle of line to next waypoint
+						else:
+							angle_diff = abs(self._next_seg_angle - self._target_seg_angle)
+							desired_thrust *= (np.pi - angle_diff) / np.pi
+
+					# Limit desired thrust to >= 0, maybe can be disabled to apply braking
 					desired_thrust = max(0., desired_thrust)
 
 					m0 = np.clip(desired_thrust - heading_signal, -1., 1.)
 					m1 = np.clip(desired_thrust + heading_signal, -1., 1.)
 
-					rospy.loginfo_throttle(1,f"sending motor signals m0:{m0}, m1:{m1}")
+					rospy.loginfo_throttle(1,f"Desired Thrust:{desired_thrust}, Sending motor signals m0:{m0}, m1:{m1}")
 
 					self._motor_pub.publish(msg.motor_cmd(m0, m1))
 
@@ -256,12 +300,12 @@ class BoatController():
 		return self._initialized
 
 if __name__ == '__main__':
-	rospy.init_node('boat_controller', anonymous=True)
 	boat_ctrl = BoatController()
+	rospy.init_node('boat_controller', anonymous=True)
 
 	while not boat_ctrl.initialized:
 		rospy.loginfo_throttle(5,f"Waiting for boat controller to initialize")
 
-	rospy.loginfo(f"Boat controller initialized, starting up")
+	rospy.loginfo(f"Boat controller initialized, starting control loop")
 
 	boat_ctrl.start()
