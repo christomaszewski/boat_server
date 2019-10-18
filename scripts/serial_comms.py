@@ -7,7 +7,7 @@ import json
 import rospy
 
 from functools import partial
-from std_msgs.msg import String
+from std_msgs.msg import String, Float64
 from boat_server import msg
 
 async def main():

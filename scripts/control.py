@@ -52,16 +52,6 @@ class PIDController():
 class BoatController():
 
 	def __init__(self):
-		rospy.Subscriber('gps', msg.gps, self._gps_callback)
-		rospy.Subscriber('imu', msg.imu, self._imu_callback)
-		rospy.Subscriber('waypoint_cmd', msg.waypoint_cmd, self._waypoint_callback)
-		rospy.Subscriber('autonomy_cmd', msg.autonomy_cmd, self._autonomy_callback)
-
-		self._r = rospy.Rate(10)
-
-		self._motor_pub = rospy.Publisher('motor_cmd', msg.motor_cmd, queue_size=10)
-		self._eboard_pub = rospy.Publisher('eboard_cmd', msg.eboard_cmd, queue_size=10)
-
 		self._initialized = False
 
 		# North should be 0
@@ -78,7 +68,7 @@ class BoatController():
 		self._curr_pos = None
 		self._curr_heading = None
 		self._autonomy_enabled = False
-		
+
 		self._waypoint_lock = Lock()
 		self._waypoints = []
 		self._waypoints_available = False
@@ -103,6 +93,17 @@ class BoatController():
 		self._heading_pub = rospy.Publisher('debug_heading', Float64, queue_size=10)
 		self._desired_heading_pub = rospy.Publisher('debug_desired', Float64, queue_size=10)
 
+		# Setup ROS Stuff
+		rospy.Subscriber('gps', msg.gps, self._gps_callback)
+		rospy.Subscriber('imu', msg.imu, self._imu_callback)
+		rospy.Subscriber('waypoint_cmd', msg.waypoint_cmd, self._waypoint_callback)
+		rospy.Subscriber('autonomy_cmd', msg.autonomy_cmd, self._autonomy_callback)
+
+		self._r = rospy.Rate(10)
+
+		self._motor_pub = rospy.Publisher('motor_cmd', msg.motor_cmd, queue_size=10)
+		self._eboard_pub = rospy.Publisher('eboard_cmd', msg.eboard_cmd, queue_size=10)
+
 	def start(self):
 		if not self.initialized:
 			rospy.loginfo("Cannot start controller until it is initialized.")
@@ -122,7 +123,7 @@ class BoatController():
 					elif self._curr_waypoint_index >= len(self._waypoints):
 					 	# All waypoints have been reached, do nothing
 					 	rospy.logwarn("Warning: curr wp index exceeds # of wps")
-					 	
+
 					elif self._curr_waypoint_index < 0:
 						# No waypoints available so just send 0 command to motors
 						rospy.loginfo_throttle(1,"No waypoints available, sending 0 motor signal")
@@ -139,12 +140,12 @@ class BoatController():
 						elif self._prev_waypoint_index > -1:
 							self._curr_src = np.copy(self._waypoints[self._prev_waypoint_index]) - self._origin
 
-						# Update target 
+						# Update target
 						self._curr_target = np.copy(self._waypoints[self._curr_waypoint_index]) - self._origin
 
 						self._src_pub.publish(msg.debug_pos(*self._curr_src))
 						self._target_pub.publish(msg.debug_pos(*self._curr_target))
-						
+
 						rospy.loginfo("Starting new waypoint...")
 						rospy.loginfo(f"origin:{self._origin}, src:{self._curr_src}, target:{self._curr_target}, boat position:{self._curr_pos}")
 
@@ -222,14 +223,15 @@ class BoatController():
 					self._desired_heading_pub.publish(desired_heading)
 
 					heading_signal = self._pid.update(heading_error, rospy.get_time())
-					rospy.loginfo_throttle(1,f"desired_heading:{desired_heading}, current_heading:{self._curr_heading}, heading_error:{heading_error}, heading_signal:{heading_signal}")	
-					
+					rospy.loginfo_throttle(1,f"desired_heading:{desired_heading}, current_heading:{self._curr_heading}, heading_error:{heading_error}, heading_signal:{heading_signal}")
+					pid_debug_vals = self._pid.debug()
+					rospy.loginfo_throttle(1,"prev_time:{}, prev_error:{}, error_integral:{}, error_deriv:{}".format(*pid_debug_vals))
 
 					# Compute the desired thrust and motor signals
 					desired_thrust = self._base_thrust
 
 					# If we are approaching the current waypoint, determine thrust adjustment
-					if dist_to_target < self._deccel_proximity
+					if dist_to_target < self._deccel_proximity:
 						# If this is the last waypoint, decay thrust according to proximity
 						if self._next_target is None:
 							desired_thrust *= (dist_to_target/self._sufficient_proximity - 1)
@@ -251,7 +253,7 @@ class BoatController():
 			else:
 				# Autonomy disabled, do nothing
 				rospy.loginfo_throttle(1,"Autonomy disabled.")
-				
+
 	def _gps_callback(self, gps_data):
 		utm_coords = np.array(utm.from_latlon(gps_data.lat, gps_data.long)[:2])
 
@@ -259,7 +261,7 @@ class BoatController():
 		if not self.initialized:
 			self._origin = utm_coords
 			rospy.loginfo(f"Got first gps position, setting origin to: {utm_coords}")
-		
+
 		self._curr_pos = utm_coords - self._origin
 
 		self._pos_pub.publish(msg.debug_pos(*self._curr_pos))
@@ -300,8 +302,8 @@ class BoatController():
 		return self._initialized
 
 if __name__ == '__main__':
-	boat_ctrl = BoatController()
 	rospy.init_node('boat_controller', anonymous=True)
+	boat_ctrl = BoatController()
 
 	while not boat_ctrl.initialized:
 		rospy.loginfo_throttle(5,f"Waiting for boat controller to initialize")
