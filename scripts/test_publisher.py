@@ -11,7 +11,7 @@ def publisher():
 	r = rospy.Rate(10)
 
 	gps_pub_msg = msg.gps(42.405818,-71.241844)
-	imu_pub_msg = msg.imu()
+	imu_pub_msg = msg.imu(180., 180., 180., 0, 0, 0, 0)
 
 	gps_pub.publish(gps_pub_msg)
 	imu_pub.publish(imu_pub_msg)

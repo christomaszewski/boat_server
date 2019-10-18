@@ -5,6 +5,7 @@ import utm
 import numpy as np
 from threading import Lock
 from collections import deque
+from scipy.signal import savgol_filter
 
 from boat_server import msg
 from std_msgs.msg import Float64
@@ -18,6 +19,12 @@ class PIDController():
 		self._kI = kI
 		self._kD = kD
 
+		self._max_len = 27
+		self._errors = deque(maxlen=self._max_len)
+		self._times = deque(maxlen=self._max_len)
+		self._window_size = 9
+		self._order = 5
+
 		self._prev_error = None
 		self._prev_time = None
 		self._error_integral = 0.
@@ -30,12 +37,17 @@ class PIDController():
 		self._error_derivative = 0.
 		self._prev_time = None
 		self._prev_error = None
+		self._errors.clear()
+		self._times.clear()
 
 	def update(self, error, t):
 		if self._prev_error is not None and self._prev_time is not None:
 			dt = t - self._prev_time
-			self._error_derivative = (error - self._prev_error)/dt
 			self._error_integral += dt*(self._prev_error + error)/2
+
+			if len(self._errors) >= self._window_size:
+				smoothed_errors = savgol_filter(list(self._errors), self._window_size, self._order)
+				self._error_derivative = (smoothed_errors[-1] - smoothed_errors[-2])/dt
 
 		signal = self._kP*error + self._kI*self._error_integral + self._kD*self._error_derivative
 
@@ -43,6 +55,9 @@ class PIDController():
 
 		self._prev_error = error
 		self._prev_time = t
+
+		self._errors.append(error)
+		self._times.append(t)
 
 		return output_signal
 
