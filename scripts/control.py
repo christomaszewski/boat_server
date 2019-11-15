@@ -5,7 +5,6 @@ import utm
 import numpy as np
 from threading import Lock
 from collections import deque
-from scipy.signal import savgol_filter
 
 from boat_server import msg
 from std_msgs.msg import Float64
@@ -13,17 +12,11 @@ from std_msgs.msg import Float64
 
 class PIDController():
 
-	def __init__(self, kP=0.35, kI=0., kD=0.):
+	def __init__(self, kP=0.35, kI=0.0001, kD=0.3):
 		""" Initializes PID controller. Max error magnitude is pi in our case """
 		self._kP = kP
 		self._kI = kI
 		self._kD = kD
-
-		self._max_len = 27
-		self._errors = deque(maxlen=self._max_len)
-		self._times = deque(maxlen=self._max_len)
-		self._window_size = 9
-		self._order = 5
 
 		self._prev_error = None
 		self._prev_time = None
@@ -37,17 +30,12 @@ class PIDController():
 		self._error_derivative = 0.
 		self._prev_time = None
 		self._prev_error = None
-		self._errors.clear()
-		self._times.clear()
 
 	def update(self, error, t):
 		if self._prev_error is not None and self._prev_time is not None:
 			dt = t - self._prev_time
 			self._error_integral += dt*(self._prev_error + error)/2
-
-			if len(self._errors) >= self._window_size:
-				smoothed_errors = savgol_filter(list(self._errors), self._window_size, self._order)
-				self._error_derivative = (smoothed_errors[-1] - smoothed_errors[-2])/dt
+			self._error_derivative = (error - self._prev_error)/dt
 
 		signal = self._kP*error + self._kI*self._error_integral + self._kD*self._error_derivative
 
@@ -55,9 +43,6 @@ class PIDController():
 
 		self._prev_error = error
 		self._prev_time = t
-
-		self._errors.append(error)
-		self._times.append(t)
 
 		return output_signal
 
@@ -72,11 +57,11 @@ class BoatController():
 		# North should be 0
 		self._magnetic_declination = 14. + 25./60.
 		self._imu_transform = lambda x: np.radians(360-((x-270-self._magnetic_declination)%360))
-		self._sufficient_proximity = 3.
-		self._max_lookahead = 3.0
+		self._sufficient_proximity = 3.0
+		self._max_lookahead = 5.0
 
-		self._base_thrust = 0.2
-		self._min_thrust = 0.0
+		self._base_thrust = 0.4
+		self._min_thrust = 0.2
 		self._deccel_proximity = 2*self._sufficient_proximity
 
 		self._origin = None
@@ -216,7 +201,7 @@ class BoatController():
 
 					projected_length = np.dot(self._target_seg, curr_seg)/self._target_seg_length
 					dist_from_ideal_line = abs(np.cross(self._target_seg, curr_seg))/self._target_seg_length
-					lookahead_dist = self._max_lookahead*(1-np.tanh(0.2*abs(dist_from_ideal_line)))
+					lookahead_dist = self._max_lookahead*(1-np.tanh(0.15*abs(dist_from_ideal_line)))
 
 					#rospy.loginfo_throttle(1,f"projected_length: {projected_length}, dist_from_ideal_line: {dist_from_ideal_line}, lookahead_dist: {lookahead_dist}")
 
@@ -247,13 +232,29 @@ class BoatController():
 
 					# If we are approaching the current waypoint, determine thrust adjustment
 					if dist_to_target < self._deccel_proximity:
+						# If this is the last waypoint decay thrust to 0.0 instead of min thrust
+						if self._next_target is None:
+							desired_thrust += (0. - self._base_thrust) / (self._sufficient_proximity - self._deccel_proximity) * (dist_to_target - self._deccel_proximity)
+						else:
+							desired_thrust += (self._min_thrust - self._base_thrust) / (self._sufficient_proximity - self._deccel_proximity) * (dist_to_target - self._deccel_proximity)
+
+						"""
 						# If this is the last waypoint, decay thrust according to proximity
 						if self._next_target is None:
-							desired_thrust *= (dist_to_target/self._sufficient_proximity - 1)
+							desired_thrust += (self._min_thrust - self._base_thrust) / (self._sufficient_proximity - self._deccel_proximity) * (dist_to_target - self._deccel_proximity)
+							#*= (dist_to_target/self._sufficient_proximity - 1)
 						# Otherwise scale thrust based on angle of line to next waypoint
 						else:
 							angle_diff = abs(self._next_seg_angle - self._target_seg_angle)
 							desired_thrust *= (np.pi - angle_diff) / np.pi
+						"""
+
+					# Else if heading error is high, cut thrust until facing the right direction
+					elif abs(heading_error) > np.pi / 2:
+						desired_thrust = 0.0
+					# Else scale down desired thrust by cosine of the heading error
+					else:
+						desired_thrust *= np.cos(heading_error)
 
 					# Limit desired thrust to >= 0, maybe can be disabled to apply braking
 					desired_thrust = max(0., desired_thrust)
